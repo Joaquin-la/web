@@ -1,57 +1,61 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { useParams } from "next/navigation";
+import { supabase } from "../../../lib/supabaseClient";
 
-export default function Home() {
+export default function CategoryPage() {
+  const params = useParams();
+  const id = params.id as string;
+
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [categoryName, setCategoryName] = useState("");
   const [background, setBackground] = useState<string>("");
 
-  const currentMonth = new Date().toLocaleString("en-US", {
-    month: "long",
-  });
-
-  const monthId = currentMonth.toLowerCase();
-
   useEffect(() => {
-    setBackground(""); 
-    setLoading(true);
     async function loadProducts() {
-      setLoading(true);
+      console.log("Category ID:", id);
 
-      const { data: productsData, error: productsError } = await supabase
-        .from("products")
-        .select("*")
-        .eq("category_id", monthId);
+      setLoading(true);
 
       const { data: categoryData, error: categoryError } = await supabase
         .from("categories")
-        .select("background")
-        .eq("id", monthId)
-        .maybeSingle();
-
-      console.log("PRODUCTS:", productsData);
-      console.log("CATEGORY:", categoryData);
-      console.log("BACKGROUND:", categoryData?.background);
-
-      if (productsError) {
-        console.error("Products error:", productsError);
-      } else {
-        setProducts(productsData || []);
-      }
+        .select("name, background")
+        .eq("id", id)
+        .single();
 
       if (categoryError) {
         console.error("Category error:", categoryError);
-      } else if (categoryData) {
-        setBackground(categoryData?.background || "");
       }
 
+      if (categoryData) {
+        setCategoryName(categoryData.name);
+        setBackground(categoryData.background);
+      }
+
+      //Get products for category
+      const { data: productData, error: productError } = await supabase
+        .from("products")
+        .select("*")
+        .eq("category_id", id);
+
+      console.log("Products:", productData);
+      console.log("Product Error:", productError);
+
+      if (productError) {
+        console.error("Product error:", productError);
+      }
+
+      setProducts(productData || []);
       setLoading(false);
     }
 
-    loadProducts();
-  }, [monthId]);
+    if (id) {
+      loadProducts();
+    }
+  }, [id]);
 
   return (
     <main
@@ -76,18 +80,18 @@ export default function Home() {
           fontFamily: "Georgia, serif",
         }}
       >
-        {currentMonth} Collection
+        {categoryName || "---"} products
       </h1>
 
       {loading && (
-        <h2 style={{ color: "white", fontFamily: "Georgia, serif" }}>
+        <h2 style={{ fontFamily: "Georgia, serif", color: "white" }}>
           Loading products...
         </h2>
       )}
 
       {!loading && products.length === 0 && (
-        <h2 style={{ color: "white", fontFamily: "Georgia, serif" }}>
-          No products found for {currentMonth}.
+        <h2 style={{ fontFamily: "Georgia, serif", color: "white" }}>
+          No products found.
         </h2>
       )}
 
@@ -101,7 +105,7 @@ export default function Home() {
         }}
       >
         {products.map((p) => (
-          <a
+          <Link
             key={p.id}
             href={`/product/${p.id}`}
             style={{
@@ -150,26 +154,18 @@ export default function Home() {
                 />
               </div>
 
-              <div
-                style={{
-                  fontSize: "1.3rem",
-                  fontWeight: "bold",
-                  marginTop: "10px",
-                }}
-              >
-                {p.name}
-              </div>
+              <h2 style={{ marginTop: "1rem" }}>{p.name}</h2>
 
-              <div
+              <p
                 style={{
-                  fontSize: "1.1rem",
-                  marginTop: "0.5rem",
+                  fontSize: "1.2rem",
+                  fontWeight: "bold",
                 }}
               >
                 ${p.price}
-              </div>
+              </p>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
     </main>
