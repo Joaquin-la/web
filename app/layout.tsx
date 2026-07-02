@@ -35,10 +35,14 @@ export default function RootLayout({
         {children}
 
         {/* ✅ Proper PayPal SDK load */}
+        
         <Script
           src="https://www.paypal.com/sdk/js?client-id=ARMOVu-muWW_zjAYYq6gDqWBh02yUxxnJHn8rdqABuenXEvzFrHt6EqKooSKFOkXZ7DPXrLTNvlAnZ29&currency=USD&components=buttons"
           strategy="afterInteractive"
+          
         />
+  
+        
       </body>
     </html>
   );

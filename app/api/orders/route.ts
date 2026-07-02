@@ -1,62 +1,157 @@
-import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
-});
+const PAYPAL_BASE =
+  "https://api-m.sandbox.paypal.com";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+async function getAccessToken() {
+  const auth = Buffer.from(
+    process.env.PAYPAL_CLIENT_ID + ":" + process.env.PAYPAL_SECRET
+  ).toString("base64");
+
+  const res = await fetch(`${PAYPAL_BASE}/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
+  });
+
+  const data = await res.json();
+  return data.access_token;
+}
+export async function POST(req: Request) {
+  const { cart } = await req.json();
+
+  const total = cart.reduce(
+    (sum: number, item: any) => sum + item.price * item.quantity,
+    0
+  );
+
+  const token = await getAccessToken();
+
+  const res = await fetch(`${PAYPAL_BASE}/v2/checkout/orders`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          amount: {
+            currency_code: "USD",
+            value: total.toFixed(2),
+          },
+        },
+      ],
+    }),
+  });
+
+  const order = await res.json();
+
+  return NextResponse.json({ orderID: order.id });
+}
+export async function PUT(req: Request) {
+  const { orderID, cart, shipping } = await req.json();
+  console.log("ORDER ID:", orderID);
+  console.log("SHIPPING:", shipping);
+  console.log("CART:", cart);
+
+  validateShipping(shipping);
+
+  const token = await getAccessToken();
+
+  // Capture the PayPal payment
+  const res = await fetch(
+  `${PAYPAL_BASE}/v2/checkout/orders/${orderID}/capture`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Prefer: "return=representation",
+    },
+  }
 );
 
-export async function POST(req: Request) {
-  try {
-    const { cart } = await req.json();
+  const capture = await res.json();
+  if (!res.ok) {
+  return NextResponse.json(capture, { status: res.status });
+}
+  console.log("Capture status:", res.status);
+  console.log(JSON.stringify(capture, null, 2));
+  // Create Supabase client
+  const { createClient } = await import("@supabase/supabase-js");
 
-    if (!cart || cart.length === 0) {
-      return NextResponse.json({ error: "Empty cart" }, { status: 400 });
-    }
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
-    // 1. Create Stripe session
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: cart.map((item: any) => ({
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: item.name || "Product",
-            images: item.image ? [item.image] : [],
-          },
-          unit_amount: Math.max(
-            50,
-            Math.round(Number(item.price || 0) * 100)
-          ),
-        },
-        quantity: item.quantity || 1,
-      })),
-      success_url: `${process.env.NEXT_PUBLIC_URL}/success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_URL}/cart`,
-    });
+  // Save order to database
+  const { error } = await supabase.from("orders").insert([
+    {
+      paypal_order_id: orderID,
 
-    // 2. Save order (pending)
-    await supabase.from("orders").insert({
-      stripe_session_id: session.id,
-      status: "pending",
-      amount: cart.reduce(
-        (sum: number, item: any) =>
-          sum + Number(item.price || 0) * (item.quantity || 1),
-        0
-      ),
-    });
+      total:
+        capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value,
 
-    return NextResponse.json({ id: session.id });
-  } catch (err: any) {
-    console.error(err);
+      status: "paid",
+
+      items: cart,
+
+      first_name: shipping.firstName,
+      last_name: shipping.lastName,
+      email: shipping.email,
+      address: shipping.address,
+      city: shipping.city,
+      state: shipping.state,
+      zip: shipping.zip,
+      country: shipping.country,
+
+      paypal_capture_id:
+        capture.purchase_units?.[0]?.payments?.captures?.[0]?.id,
+
+      payer_id: capture.payer?.payer_id,
+
+      payer_name:
+        `${capture.payer?.name?.given_name ?? ""} ${capture.payer?.name?.surname ?? ""}`.trim(),
+
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (error) {
+    console.error(error);
+
     return NextResponse.json(
-      { error: err.message },
-      { status: 500 }
+      {
+        error: error.message,
+        details: error,
+      },
+      {
+        status: 500,
+      }
     );
+  }
+
+  return NextResponse.json({
+    success: true,
+  });
+}
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateShipping(shipping: any) {
+  if (!shipping) throw new Error("Missing shipping");
+
+  if (!shipping.firstName) throw new Error("Missing first name");
+  if (!shipping.lastName) throw new Error("Missing last name");
+  if (!shipping.address) throw new Error("Missing address");
+  if (!shipping.city) throw new Error("Missing city");
+
+  if (!emailRegex.test(shipping.email)) {
+    throw new Error("Invalid email");
   }
 }
