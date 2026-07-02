@@ -24,10 +24,9 @@ export async function POST(req: Request) {
   const { cart } = await req.json();
 
   const total = cart.reduce(
-    (sum: number, item: any) => sum + item.price * item.quantity,
+    (sum: number, item: any) => sum + Number(item.price) * Number(item.quantity),
     0
   );
-
   const token = await getAccessToken();
 
   const res = await fetch(`${PAYPAL_BASE}/v2/checkout/orders`, {
@@ -55,6 +54,10 @@ export async function POST(req: Request) {
 }
 export async function PUT(req: Request) {
   const { orderID, cart, shipping } = await req.json();
+  const total = cart.reduce(
+  (sum: number, item: any) => sum + item.price * item.quantity,
+  0
+);
   console.log("ORDER ID:", orderID);
   console.log("SHIPPING:", shipping);
   console.log("CART:", cart);
@@ -65,22 +68,28 @@ export async function PUT(req: Request) {
 
   // Capture the PayPal payment
   const res = await fetch(
-  `${PAYPAL_BASE}/v2/checkout/orders/${orderID}/capture`,
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Prefer: "return=representation",
-    },
-  }
-);
+    `${PAYPAL_BASE}/v2/checkout/orders/${orderID}/capture`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    }
+  );
 
   const capture = await res.json();
   if (!res.ok) {
-  return NextResponse.json(capture, { status: res.status });
+  console.error(capture);
+
+  return NextResponse.json(capture, {
+    status: res.status,
+  });
 }
-  console.log("Capture status:", res.status);
-  console.log(JSON.stringify(capture, null, 2));
+
+console.log("Capture:");
+console.log(JSON.stringify(capture, null, 2));
   // Create Supabase client
   const { createClient } = await import("@supabase/supabase-js");
 
@@ -94,8 +103,7 @@ export async function PUT(req: Request) {
     {
       paypal_order_id: orderID,
 
-      total:
-        capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value,
+      total: total,
 
       status: "paid",
 

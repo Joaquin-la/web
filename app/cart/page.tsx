@@ -8,6 +8,7 @@ export default function CartPage() {
   const [addressValid, setAddressValid] = useState(false);
   
   
+  
   const [shipping, setShipping] = useState({
     firstName: "",
     lastName: "",
@@ -98,7 +99,6 @@ export default function CartPage() {
 
 return null;
 
-    return null;
   };
 
   const updateCart = (updatedCart: any[]) => {
@@ -132,20 +132,17 @@ return null;
     (sum, item) => sum + item.price * item.quantity,
     0
   );
-  useEffect(() => {
-  const script = document.createElement("script");
-
-  script.src =
-    "https://maps.googleapis.com/maps/api/js?key=AIzaSyAZSTSYX6r5SSQ2uRKjil8uLUuzeLHPKNI&libraries=places";
-
-  script.async = true;
-
-  script.onload = () => {
+useEffect(() => {
+  const initializeAutocomplete = () => {
     const input = document.getElementById(
       "address-input"
-    ) as HTMLInputElement;
+    ) as HTMLInputElement | null;
 
     if (!input) return;
+
+    // Prevent creating multiple Autocomplete instances
+    if ((input as any)._autocompleteInitialized) return;
+    (input as any)._autocompleteInitialized = true;
 
     const autocomplete = new google.maps.places.Autocomplete(input, {
       types: ["address"],
@@ -168,11 +165,11 @@ return null;
 
       const components: Record<string, string> = {};
 
-    (place.address_components || []).forEach((component: any) => {
-      component.types.forEach((type: string) => {
-        components[type] = component.long_name;
+      (place.address_components || []).forEach((component: any) => {
+        component.types.forEach((type: string) => {
+          components[type] = component.long_name;
+        });
       });
-    });
 
       setShipping((prev) => ({
         ...prev,
@@ -187,11 +184,32 @@ return null;
     });
   };
 
-  document.body.appendChild(script);
+  // If Google Maps is already loaded, don't load it again.
+  if ((window as any).google?.maps?.places) {
+    initializeAutocomplete();
+    return;
+  }
 
-  return () => {
-    document.body.removeChild(script);
-  };
+  // Check if the script already exists.
+  const existingScript = document.querySelector(
+    'script[src*="maps.googleapis.com/maps/api/js"]'
+  ) as HTMLScriptElement | null;
+
+  if (existingScript) {
+    existingScript.addEventListener("load", initializeAutocomplete, {
+      once: true,
+    });
+    return;
+  }
+
+  // Load the script only once.
+  const script = document.createElement("script");
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
+  script.async = true;
+  script.defer = true;
+  script.onload = initializeAutocomplete;
+
+  document.head.appendChild(script);
 }, []);
 
   useEffect(() => {
@@ -271,6 +289,7 @@ return null;
         flexDirection: "column",
         alignItems: "center",
         gap: "20px",
+        marginBottom: "100px",
       }}
     >
       <h1>Your Cart</h1>
@@ -313,7 +332,7 @@ return null;
                       borderRadius: "6px",
                       border: "none",
                       cursor: "pointer",
-                      background: "#444",
+                      background: "#8d8d8d",
                       color: "white",
                       fontSize: "18px",
                     }}
@@ -331,7 +350,7 @@ return null;
                       borderRadius: "6px",
                       border: "none",
                       cursor: "pointer",
-                      background: "#444",
+                      background: "#8d8d8d",
                       color: "white",
                       fontSize: "18px",
                     }}
@@ -358,11 +377,11 @@ return null;
                     background: "transparent",
                     border: "none",
                     cursor: "pointer",
-                    fontSize: "22px",
+                    fontSize: "30px",
                     color: "#ff4d4d",
                   }}
                 >
-                  🗑️
+                  X
                 </button>
               </div>
             </div>
@@ -378,6 +397,9 @@ return null;
               padding: 20,
               borderRadius: 10,
               marginTop: 20,
+              marginBottom: 70,
+              fontFamily: "Georgia, sans-serif",
+              
             }}
           >
             <h2>Shipping Information</h2>
@@ -406,6 +428,10 @@ return null;
                 width: "100%",
                 marginBottom: 10,
                 padding: 10,
+                color: "white",
+                backgroundColor: "#1c1c1c",
+                border: "1px solid #555",
+                borderRadius: 6,
               }}
             />
             );
@@ -418,6 +444,10 @@ return null;
               width: "100%",
               marginBottom: 10,
               padding: 10,
+              border: "1px solid #555",
+              borderRadius: 6,
+              backgroundColor: "#1c1c1c",
+              color: "white",
             }}
           >
             <option value="">Select State
@@ -426,7 +456,7 @@ return null;
             {US_STATES.map((state) => (
               <option key={state} value={state}
               style={{
-                background: "#929292",
+                background: "#ffffff",
                 color: "black",}}>
                 {state}
               </option>
@@ -461,11 +491,12 @@ return null;
 
             <button
             style={{
-              padding: "10px 20px",
-              background: "#0070f3",
+              padding: "12px 20px",
+              background: "#0064d6",
               cursor: "pointer",
               color: "white",
-              border: "none",}}
+              border: "none",
+              marginTop: "10px",}}
               onClick={() => {
                 const error = validateShipping();
                 if (error) {
